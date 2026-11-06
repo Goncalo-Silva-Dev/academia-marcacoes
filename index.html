@@ -4742,15 +4742,25 @@ function highlight(){
   $$('nav a').forEach(function(a){ a.classList.toggle('active', a.getAttribute('href')==='#'+c); });
   $('#mnav').value=c;
 }
-function show(){
+function show(restoreScroll){
   var c=current();
   $$('.lesson').forEach(function(s){ s.classList.toggle('show', s.id===c); });
   highlight();
-  window.scrollTo(0,0);
+  if(c!=='inicio') store.set('ultima', c);      // lembra a lição onde estás (a página inicial não conta)
+  var pos=restoreScroll===true ? (store.get('scroll',{})[c]||0) : 0;
+  window.scrollTo(0,pos);
+  if(pos) setTimeout(function(){ window.scrollTo(0,pos); }, 300);   // depois de tudo desenhado
   if(c==='licao-6') apiSelect(apiCur);
   if(c==='licao-7' && phoneState.step===0) renderPhone();
 }
-window.addEventListener('hashchange', show);
+var pendingRestore=false;
+window.addEventListener('hashchange', function(){ show(pendingRestore); pendingRestore=false; });
+// guarda a posição na página de cada lição (para voltares exatamente onde estavas)
+var scrollTimer=null;
+window.addEventListener('scroll', function(){
+  clearTimeout(scrollTimer);
+  scrollTimer=setTimeout(function(){ var m=store.get('scroll',{}); m[current()]=Math.round(window.scrollY); store.set('scroll',m); }, 250);
+}, {passive:true});
 $('#mnav').addEventListener('change', function(){ location.hash=this.value; });
 document.addEventListener('click', function(e){
   var g=e.target.closest('[data-go]'); if(g){ location.hash=g.getAttribute('data-go'); }
@@ -6397,7 +6407,27 @@ window.addEventListener('hashchange',function(){ if(drawer.classList.contains('o
 })(0);
 
 /* ================= arranque ================= */
-renderNav(); refreshDoneBtns(); show();
+// Ao abrir a app sem lição no endereço, volta à última lição onde estavas
+(function(){
+  var h=location.hash.replace('#',''), ultima=store.get('ultima',null);
+  var valida=function(id){ return LESSONS.some(function(l){ return l[0]===id; }); };
+  if(!valida(h) && ultima && valida(ultima) && ultima!=='inicio'){
+    try{ history.replaceState(null,'','#'+ultima); }catch(e){}
+  }
+  // cartão "Continuar onde ficaste" na página inicial
+  if(ultima && valida(ultima) && ultima!=='inicio'){
+    var l=LESSONS.filter(function(x){ return x[0]===ultima; })[0];
+    var part='';
+    for(var i=0;i<LESSONS.length;i++){ if(LESSONS[i][2]) part=LESSONS[i][2]; if(LESSONS[i][0]===ultima) break; }
+    var card=el('div',{class:'card tip',style:'display:flex;align-items:center;gap:14px;flex-wrap:wrap'},
+      '<div style="flex:1;min-width:200px"><b>Continuar onde ficaste</b><br><span style="color:var(--muted);font-size:14px">'+esc(part)+' · '+esc(l[1])+'</span></div>');
+    var b=el('button',null,'Continuar →');
+    b.addEventListener('click',function(){ if(current()===ultima){ show(true); } else { pendingRestore=true; location.hash=ultima; } });
+    card.appendChild(b);
+    var lead=$('#inicio .lead'); lead.parentNode.insertBefore(card, lead.nextSibling);
+  }
+})();
+renderNav(); refreshDoneBtns(); show(true);
 </script>
 </body>
 </html>
