@@ -248,7 +248,7 @@ textarea.code{width:100%;min-height:260px;font-family:'JetBrains Mono',monospace
 pre.tree{background:#fff;color:var(--ink);border:1px solid var(--line);font-size:13px}
 .fnote{font-size:14px;color:var(--muted);margin:-8px 0 18px}
 /* professor IA */
-.tutor-on .tutor-btn{display:inline-block}
+.tutor-on .tutor-btn,.tutor-ext .tutor-btn{display:inline-block}
 .tutor-btn{display:none;background:#fff4dc;color:#7a4e00;border:1.5px solid #f0d58f}
 .tutor{display:none;margin-top:12px;border:1.5px solid #e9dcff;background:#fbf9ff;border-radius:12px;padding:12px}
 .tutor.show{display:block}
@@ -266,7 +266,10 @@ pre.tree{background:#fff;color:var(--ink);border:1px solid var(--line);font-size
 .ask{display:flex;gap:8px}
 .ask textarea{flex:1;resize:none;height:42px;font-size:14px}
 .fab{position:fixed;right:22px;bottom:22px;z-index:8;border-radius:99px;padding:12px 18px;box-shadow:0 8px 24px rgba(60,30,140,.25);display:none}
-.tutor-on .fab{display:block}
+.tutor-on .fab,.tutor-ext .fab{display:block}
+.tutor-extnote{display:none;font-size:12.5px;color:var(--muted);margin:-2px 0 8px}
+.tutor-ext .tutor-extnote{display:block}
+.msg.a textarea.copyfb{width:100%;height:90px;font-family:'JetBrains Mono',monospace;font-size:11.5px;margin-top:6px}
 .drawer{position:fixed;top:0;right:0;bottom:0;width:400px;max-width:100vw;background:#fff;z-index:9;box-shadow:-10px 0 30px rgba(20,10,50,.15);display:flex;flex-direction:column;transform:translateX(105%);transition:transform .25s}
 .drawer.open{transform:none}
 .drawer .tutor-h{padding:16px 16px 0}
@@ -6336,8 +6339,29 @@ function makeChat(root, getContext, chips){
   var history=[], busy=false;
   chips.forEach(function(c){ var b=el('button',null,esc(c)); b.addEventListener('click',function(){ go(c); }); qc.appendChild(b); });
   function bubble(cls,html){ var m=el('div',{class:'msg '+cls},html); msgs.appendChild(m); msgs.scrollTop=msgs.scrollHeight; return m; }
+  // Fora do claude.ai: copia a pergunta (com o contexto) e abre o Claude numa janela nova
+  function external(q){
+    inp.value='';
+    bubble('u',esc(q));
+    var texto=TUTOR_RULES+'\n\n--- Contexto ---\n'+getContext()+'\n--- Fim do contexto ---\n\nPergunta do aluno: '+q;
+    var a=bubble('a','');
+    var ok=false;
+    try{ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(texto).then(function(){ ok=true; mostrar(true); }, function(){ mostrar(false); }); } else mostrar(false); }
+    catch(e){ mostrar(false); }
+    function mostrar(copiado){
+      a.innerHTML=(copiado?'✅ <b>Copiei a tua pergunta</b>, com o teu código e o último resultado.':'Não consegui copiar automaticamente. Seleciona o texto da caixa abaixo e copia-o (<code>Ctrl</code>+<code>C</code>).')+
+        '<br>Abri o Claude numa janela nova: cola lá com <code>Ctrl</code>+<code>V</code> (no Mac, <code>Cmd</code>+<code>V</code>) e envia.<br>'+
+        '<a href="https://claude.ai/new" target="_blank" rel="noopener">Abrir o Claude outra vez →</a>';
+      if(!copiado){ var t=el('textarea',{class:'copyfb',readonly:'readonly'}); t.value=texto; a.appendChild(t); setTimeout(function(){ t.focus(); t.select(); },50); }
+      msgs.scrollTop=msgs.scrollHeight;
+    }
+    // abre o Claude (dentro do clique, para o browser não bloquear a janela)
+    var link=document.createElement('a'); link.href='https://claude.ai/new'; link.target='_blank'; link.rel='noopener';
+    document.body.appendChild(link); link.click(); link.remove();
+  }
   function go(q){
-    q=(q||'').trim(); if(!q||busy||!SAMPLE) return;
+    q=(q||'').trim(); if(!q||busy) return;
+    if(!SAMPLE){ external(q); return; }
     busy=true; send.disabled=true; inp.value='';
     bubble('u',esc(q));
     var a=bubble('a','<span style="color:var(--muted)">A pensar…</span>');
@@ -6352,7 +6376,7 @@ function makeChat(root, getContext, chips){
       a.textContent = c==='rate_limited' ? 'Fizeste muitas perguntas seguidas. Espera um minuto e tenta outra vez.' :
                       c==='not_granted' ? 'O professor não está disponível nesta página.' :
                       'Não consegui responder agora'+(err&&err.message?' ('+err.message+')':'')+'. Tenta outra vez.';
-      if(c==='not_granted') document.body.classList.remove('tutor-on');
+      if(c==='not_granted'){ SAMPLE=null; document.body.classList.remove('tutor-on'); document.body.classList.add('tutor-ext'); }
     }).then(function(){ busy=false; send.disabled=false; msgs.scrollTop=msgs.scrollHeight; });
   }
   send.addEventListener('click',function(){ go(inp.value); });
@@ -6366,6 +6390,7 @@ $$('.ed').forEach(function(box){
   var panel=el('div',{class:'tutor'});
   var h=el('div',{class:'tutor-h'},'🧑‍🏫 Professor <span style="font-weight:400;color:var(--muted);font-size:12.5px">vê o teu código e o último resultado</span>');
   var x=el('button',{class:'x',title:'Fechar'},'×'); h.appendChild(x); panel.appendChild(h);
+  panel.appendChild(el('div',{class:'tutor-extnote'},'Fora do claude.ai, a tua pergunta é copiada (com o código e o resultado) e o Claude abre numa janela nova: só tens de colar.'));
   box.appendChild(panel);
   var chat=null;
   var chips = box._isTry ? ['Explica-me este código linha a linha','O que acontece se eu mudar alguma coisa?','Dá-me uma ideia para experimentar']
@@ -6381,6 +6406,7 @@ var fab=el('button',{class:'fab'},'🧑‍🏫 Professor'); document.body.append
 var drawer=el('div',{class:'drawer',role:'dialog','aria-label':'Professor'}); document.body.appendChild(drawer);
 var dh=el('div',{class:'tutor-h'},'🧑‍🏫 Professor'); var dx=el('button',{class:'x',title:'Fechar'},'×'); dh.appendChild(dx); drawer.appendChild(dh);
 var dctx=el('small',{class:'ctx'}); drawer.appendChild(dctx);
+drawer.appendChild(el('div',{class:'tutor-extnote',style:'padding:0 16px'},'Fora do claude.ai, a tua pergunta é copiada com o texto da lição e o Claude abre numa janela nova: só tens de colar.'));
 var dbody=el('div',{style:'flex:1;display:flex;flex-direction:column;min-height:0'}); drawer.appendChild(dbody);
 var lessonChats={};
 function openDrawer(){
@@ -6399,11 +6425,15 @@ fab.addEventListener('click',function(){ drawer.classList.contains('open')?drawe
 dx.addEventListener('click',function(){ drawer.classList.remove('open'); });
 window.addEventListener('hashchange',function(){ if(drawer.classList.contains('open')) openDrawer(); });
 // liga o professor se esta página puder falar com o Claude
+if(!window.claude) document.body.classList.add('tutor-ext');   // fora do claude.ai: modo copiar e abrir
 (function connect(tries){
   try{
-    if(!window.claude || typeof window.claude.use!=='function'){ if(tries<20) setTimeout(function(){ connect(tries+1); },500); return; }
-    window.claude.use('sample').then(function(s){ if(s){ SAMPLE=s; document.body.classList.add('tutor-on'); } }, function(){});
-  }catch(e){}
+    if(!window.claude || typeof window.claude.use!=='function'){ if(tries<20) setTimeout(function(){ connect(tries+1); },500); else document.body.classList.add('tutor-ext'); return; }
+    window.claude.use('sample').then(function(s){
+      if(s){ SAMPLE=s; document.body.classList.remove('tutor-ext'); document.body.classList.add('tutor-on'); }
+      else document.body.classList.add('tutor-ext');
+    }, function(){ document.body.classList.add('tutor-ext'); });
+  }catch(e){ document.body.classList.add('tutor-ext'); }
 })(0);
 
 /* ================= arranque ================= */
